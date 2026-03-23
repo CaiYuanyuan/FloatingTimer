@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>FloatingTimer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+        }
+
+        body {
+            background: transparent;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Segoe UI', 'Roboto', system-ui, -apple-system, 'Microsoft YaHei', sans-serif;
+        }
+
+        /* 悬浮计时器容器：半透明，固定宽高200x130，圆角 */
+        .floating-timer {
+            width: 200px;
+            height: 150px;
+            /*background: rgba(20, 28, 38, 0.5);*/
+            backdrop-filter: blur(14px);
+            border-radius: 5px;
+            /*box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.08);*/
+            /*border: 1px solid rgba(255, 255, 255, 0.18);*/
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            transition: all 0.2s;
+        }
+
+        /* 时间显示区域 */
+        .time-area {
+            position: relative;
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: default;
+            -webkit-app-region: drag; /* 整个时间区域可拖动， Electron 这个区域是用来拖动窗口的，因此它会阻止鼠标事件的传播，包括 hover 事件。 */
+            pointer-events: none; /* 让鼠标事件（点击、hover）穿透到父元素，同时保持拖动功能 */
+        }
+
+        .time-digits {
+            font-size: 1.5rem;
+            font-weight: 600;
+            font-family: "quote-cjk-patch", "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+            color: #ffffff;
+            /*text-shadow: 0 0 5px rgba(0, 160, 255, 0.5);*/
+            letter-spacing: 1px;
+            background: rgba(0, 0, 0, 0.65);
+            padding: 4px 10px;
+            border-radius: 15px;
+            backdrop-filter: blur(4px);
+            -webkit-app-region: drag; /* 时间数字本身不参与拖动 */
+            pointer-events: auto; /* 恢复数字区域的鼠标事件 */
+            z-index: 2;
+        }
+
+
+        /* 控制栏包装器 - 默认隐藏 */
+        .controls-wrapper {
+            /*background: rgba(0, 0, 0, 0.65);*/
+            backdrop-filter: blur(12px);
+            padding: 6px 8px 8px 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            transition: opacity 0.18s ease, visibility 0.18s ease;
+            opacity: 0;
+            visibility: hidden;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .floating-timer:hover {
+            background: rgba(0, 0, 0, 0.65);
+        }
+
+        /* 鼠标悬浮时显示控制栏（无论是否在运行，悬浮就出现） */
+        .floating-timer:hover .controls-wrapper {
+            opacity: 1 !important;
+            visibility: visible !important;
+        }
+
+
+        /* 模式切换行 */
+        .mode-row {
+            display: flex;
+            gap: 6px;
+            justify-content: center;
+        }
+
+        .mode-btn {
+            flex: 1;
+            background: rgba(0, 0, 0, 0.85);
+            border: none;
+            font-size: 0.8rem;
+            font-weight: 500;
+            padding: 4px 0;
+            border-radius: 5px;
+            color: #eef2f8;
+            cursor: pointer;
+            transition: all 0.12s;
+            text-align: center;
+            letter-spacing: 0.3px;
+            font-family: inherit;
+            margin: 0 13px;
+        }
+
+        .mode-btn.active {
+            background: rgba(18, 165, 18, 0.65);
+            color: white;
+            box-shadow: 0 0 3px rgba(76, 175, 80, 0.5);
+        }
+
+        .mode-btn:active {
+            transform: scale(0.96);
+        }
+
+        /* 倒计时设置区域 */
+        .setter-row {
+            display: flex;
+            gap: 6px;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .time-set {
+            background: rgba(0, 0, 0, 0.65);
+            border-radius: 5px;
+            padding: 2px 6px;
+            display: flex;
+            align-items: center;
+            gap: 3px;
+        }
+
+        /*.time-set label {*/
+        /*    font-size: 0.55rem;*/
+        /*    font-weight: 500;*/
+        /*    color: #bcd0e6;*/
+        /*    letter-spacing: 0.3px;*/
+        /*}*/
+
+        .time-set input {
+            width: 38px;
+            background: rgba(0, 0, 0, 0.85);
+            /*border: 1px solid #3a6e8a;*/
+            color: #fff;
+            font-size: 0.8rem;
+            font-weight: 500;
+            text-align: center;
+            border-color: rgba(137, 246, 176, 0.65);
+            border-radius: 5px;
+            padding: 2px 0;
+            font-family: inherit;
+            outline: none;
+        }
+
+        .time-set input:focus {
+            border-color: #6bc8ff;
+            background: #0a1620;
+        }
+
+        /* 动作按钮行 */
+        .action-row {
+            display: flex;
+            gap: 4px;
+            justify-content: center;
+        }
+
+        .action-btn {
+            background: rgba(0, 0, 0, 0.85);
+            border: none;
+            /*font-size: 0.7rem;*/
+            font-size: 0.8rem;
+            font-weight: 500;
+            padding: 2px 4px;
+            border-radius: 5px;
+            color: #f0f6fe;
+            cursor: pointer;
+            transition: 0.1s;
+            text-align: center;
+            flex: 1;
+            font-family: inherit;
+        }
+
+        .action-btn:hover,input[type=number]:hover,#timerDigits:hover,.mode-btn:hover {
+            transform: scale(1.1);
+        }
+
+        .action-btn.primary {
+            background: rgba(18, 165, 18, 0.65);
+        }
+
+        .action-btn.warning {
+            background: rgba(0, 0, 0, 0.85);
+        }
+
+        .action-btn:active {
+            transform: scale(0.96);
+        }
+
+        /* 倒计时提醒闪烁 */
+        @keyframes alertBlink {
+            0% {
+                text-shadow: 0 0 0 #ff6633;
+                background: rgba(255, 70, 30, 0.3);
+            }
+            100% {
+                text-shadow: 0 0 10px #ff4422;
+                background: rgba(200, 50, 0, 0.7);
+            }
+        }
+
+        .alert-flash {
+            animation: alertBlink 0.5s ease-in-out 3;
+        }
+
+        /* 隐藏数字输入框箭头 */
+        input::-webkit-outer-spin-button,
+        input::-webkit-inner-spin-button {
+            opacity: 0.4;
+        }
+
+        .close-btn {
+            position: absolute;
+            top: 1px;
+            right: 0;
+            width: 16px;
+            height: 16px;
+            background: rgba(0, 0, 0, 0.25);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            border-radius: 50%;
+            color: white;
+            font-size: 12px;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            z-index: 9999;
+            opacity: 1 !important;
+            visibility: visible !important;
+            -webkit-app-region: no-drag; /* 关闭按钮本身不参与拖动 */
+            pointer-events: auto; /* 恢复关闭按钮的鼠标事件 */
+        }
+
+        .close-btn:hover {
+            background: rgba(255, 67, 54, 0.8);
+            color: white;
+            transform: scale(1.1);
+        }
+
+        .setting {
+            position: absolute;
+            top: 26px;
+            right: 0;
+            width: 16px;
+            height: 16px;
+            background: rgba(0, 0, 0, 0.25);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            border-radius: 50%;
+            color: white;
+            font-size: 12px;
+            font-weight: bold;
+            font-style: normal;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            z-index: 9999;
+            opacity: 1 !important;
+            visibility: visible !important;
+            -webkit-app-region: no-drag; /* 关闭按钮本身不参与拖动 */
+            pointer-events: auto; /* 恢复关闭按钮的鼠标事件 */
+        }
+
+        .setting:hover {
+            color: #abedba;
+            transform: scale(1.1);
+        }
+
+
+    </style>
+</head>
+<body>
+    <div class="floating-timer" id="timerWidget">
+        <!-- 时间显示区 -->
+        <div class="time-area">
+            <div class="time-digits" id="timerDigits">
+                00:00:00
+            </div>
+            <!-- 关闭按钮 -->
+            <button class="close-btn" id="closeBtn" title="关闭">×</button>
+        </div>
+        <i class="setting">⚙️</i>
+
+        <!-- 控制栏（鼠标悬浮出现） -->
+        <div class="controls-wrapper" id="controlsWrapper">
+            <!-- 倒计时设置区：小时/分钟/秒 -->
+            <div class="setter-row" id="setterRow">
+                <div class="time-set">
+                    <input type="number" id="hourInput" min="0" max="24" value="0" step="1" aria-label="小时">
+                </div>
+                <div class="time-set">
+                    <input type="number" id="minInput" min="0" max="59" value="0" step="1" aria-label="分钟">
+                </div>
+                <div class="time-set">
+                    <input type="number" id="secInput" min="0" max="59" value="0" step="1" aria-label="秒">
+                </div>
+            </div>
+            <!-- 模式切换 -->
+            <div class="mode-row">
+                <button class="mode-btn" id="modeCountUpBtn">正计时</button>
+                <button class="mode-btn" id="modeCountDownBtn">倒计时</button>
+            </div>
+
+            <!-- 控制按钮组 -->
+            <div class="action-row">
+                <button class="action-btn primary" id="startBtn">开始</button>
+                <button class="action-btn" id="pauseBtn">暂停</button>
+                <button class="action-btn warning" id="resetBtn">重置⚠️</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        (function () {
+            // DOM 元素
+            const closeBtn = document.getElementById('closeBtn');
+            const timerDigits = document.getElementById('timerDigits');
+            const modeCountUp = document.getElementById('modeCountUpBtn');
+            const modeCountDown = document.getElementById('modeCountDownBtn');
+            const startBtn = document.getElementById('startBtn');
+            const pauseBtn = document.getElementById('pauseBtn');
+            const resetBtn = document.getElementById('resetBtn');
+            const hourInput = document.getElementById('hourInput');
+            const minInput = document.getElementById('minInput');
+            const secInput = document.getElementById('secInput');
+
+            // 状态变量
+            let currentMode = 'countup';      // 'countup' 正计时 / 'countdown' 倒计时
+            let isRunning = false;
+            let timerInterval = null;
+            let currentSeconds = 0;            // 当前计时秒数（正计时累计秒 / 倒计时剩余秒）
+            let savedTargetSeconds = 5;        // 倒计时保存的目标秒数（用户设定）
+            let savedStartSeconds = 0;         // 正计时保存的开始秒数（用户设定）
+            let hasAlerted = false;             // 防止重复提醒
+
+            // ---------- 辅助函数 ----------
+            function formatTime(sec) {
+                if (sec < 0) sec = 0;
+                const hrs = Math.floor(sec / 3600);
+                const mins = Math.floor((sec % 3600) / 60);
+                const secs = sec % 60;
+                return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+            }
+
+            function updateDisplay() {
+                let displaySec = currentSeconds;
+                if (currentMode === 'countdown') {
+                    displaySec = Math.max(0, currentSeconds);
+                }
+                timerDigits.innerText = formatTime(displaySec);
+
+                if (currentMode === 'countdown' && currentSeconds <= 0 && isRunning) {
+                    if (!hasAlerted) timerDigits.classList.add('alert-flash');
+                } else {
+                    timerDigits.classList.remove('alert-flash');
+                }
+            }
+
+            // 从输入框获取倒计时目标秒数（并校正范围）
+            function getTargetFromInput() {
+                let hrs = parseInt(hourInput.value, 10) || 0;
+                let mins = parseInt(minInput.value, 10) || 0;
+                let secs = parseInt(secInput.value, 10) || 0;
+                if (mins > 59) mins = 59;
+                if (secs > 59) secs = 59;
+                if (hrs < 0) hrs = 0;
+                if (mins < 0) mins = 0;
+                if (secs < 0) secs = 0;
+                hourInput.value = hrs;
+                minInput.value = mins;
+                secInput.value = secs;
+                let total = (hrs * 3600) + (mins * 60) + secs;
+                return total; // 允许0秒，正计时可以从0开始
+            }
+
+            // 将保存的值同步到输入框
+            function syncInputsFromTarget() {
+                let seconds;
+                if (currentMode === 'countup') {
+                    seconds = savedStartSeconds;
+                } else {
+                    seconds = savedTargetSeconds;
+                }
+                const hrs = Math.floor(seconds / 3600);
+                const mins = Math.floor((seconds % 3600) / 60);
+                const secs = seconds % 60;
+                hourInput.value = hrs;
+                minInput.value = mins;
+                secInput.value = secs;
+            }
+
+            // 停止计时器
+            function stopTimerInternal() {
+                if (timerInterval) {
+                    clearInterval(timerInterval);
+                    timerInterval = null;
+                }
+                isRunning = false;
+            }
+
+            // // 正计时重置 （恢复到保存的时间）
+            // function resetCountUp() {
+            //     currentSeconds = savedStartSeconds;
+            //     updateDisplay();
+            //     hasAlerted = false;
+            //     timerDigits.classList.remove('alert-flash');
+            // }
+
+            // 正计时重置（重置为0）
+            function resetCountUp() {
+                currentSeconds = 0;
+                savedStartSeconds = 0;
+                updateDisplay();
+                hasAlerted = false;
+                timerDigits.classList.remove('alert-flash');
+            }
+
+            // // 倒计时重置（恢复到保存的目标时间）
+            // function resetCountDown() {
+            //     currentSeconds = savedTargetSeconds;
+            //     updateDisplay();
+            //     hasAlerted = false;
+            //     timerDigits.classList.remove('alert-flash');
+            // }
+
+            // 倒计时重置（重置为0）
+            function resetCountDown() {
+                currentSeconds = 0;
+                savedTargetSeconds = 0;
+                updateDisplay();
+                hasAlerted = false;
+                timerDigits.classList.remove('alert-flash');
+            }
+
+            // 提醒功能
+            function triggerReminder() {
+                // alert("⏰ 倒计时结束，恭喜您完成目标！");
+                if (Notification.permission === "granted") {
+                    new Notification("悬浮计时器", {body: "倒计时已结束"});
+                } else if (Notification.permission !== "denied") {
+                    Notification.requestPermission();
+                }
+                const originalTitle = document.title;
+                let count = 0;
+                const blink = setInterval(() => {
+                    document.title = document.title === "时间到" ? originalTitle : "时间到";
+                    count++;
+                    if (count >= 6) {
+                        clearInterval(blink);
+                        document.title = originalTitle;
+                    }
+                }, 500);
+            }
+
+            // 轻蜂鸣
+            function playBeep() {
+                try {
+                    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.frequency.value = 880;
+                    gain.gain.value = 0.15;
+                    osc.start();
+                    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 3);
+                    osc.stop(audioCtx.currentTime + 3);
+                } catch (e) {
+                }
+            }
+
+            // 开始计时（核心）
+            function startTimer() {
+                if (isRunning) return;
+
+                if (currentMode === 'countdown') {
+                    if (currentSeconds <= 0) {
+                        alert("倒计时已结束，请重设时间哦！");
+                        return;
+                    }
+                    hasAlerted = false;
+                    timerDigits.classList.remove('alert-flash');
+                }
+
+                isRunning = true;
+                if (timerInterval) clearInterval(timerInterval);
+
+                timerInterval = setInterval(() => {
+                    if (!isRunning) return;
+
+                    if (currentMode === 'countup') {
+                        currentSeconds++;
+                        updateDisplay();
+                    } else if (currentMode === 'countdown') {
+                        if (currentSeconds > 0) {
+                            currentSeconds--;
+                            updateDisplay();
+                            if (currentSeconds === 0) {
+                                if (!hasAlerted) {
+                                    hasAlerted = true;
+                                    triggerReminder();
+                                    playBeep();
+                                    timerDigits.classList.add('alert-flash');
+                                }
+                                if (isRunning) {
+                                    stopTimerInternal();
+                                }
+                            }
+                        } else {
+                            if (!hasAlerted) {
+                                hasAlerted = true;
+                                triggerReminder();
+                                playBeep();
+                                timerDigits.classList.add('alert-flash');
+                            }
+                            if (isRunning) stopTimerInternal();
+                        }
+                    }
+                }, 1000);
+            }
+
+            // 暂停
+            function pauseTimer() {
+                if (isRunning) {
+                    stopTimerInternal();
+                }
+            }
+
+            // // 重置（根据当前模式）
+            // function resetTimer() {
+            //     stopTimerInternal();
+            //     if (currentMode === 'countup') {
+            //         resetCountUp();
+            //     } else {
+            //         resetCountDown();
+            //     }
+            //     isRunning = false;
+            // }
+
+            // 重置（根据当前模式）
+            function resetTimer() {
+                // 显示确认对话框
+                const confirmReset = confirm("提醒：您要重置所有数据吗？\n\n点击[确定]后，时间将归零，此操作不可撤销。\n\n点击[取消]，可保留当前时间记录。");
+
+                if (confirmReset) {
+                    // 用户确认重置
+                    stopTimerInternal();
+                    if (currentMode === 'countup') {
+                        resetCountUp();
+                    } else {
+                        resetCountDown();
+                    }
+                    isRunning = false;
+                }
+                // 如果用户取消，不做任何操作，保持原有数据
+            }
+
+            // 切换模式
+            function setMode(mode) {
+                if (isRunning) {
+                    stopTimerInternal();
+                }
+                currentMode = mode;
+
+                if (mode === 'countup') {
+                    modeCountUp.classList.add('active');
+                    modeCountDown.classList.remove('active');
+                    // 正计时模式：从输入框获取开始时间
+                    const start = getTargetFromInput();
+                    savedStartSeconds = start;
+                    syncInputsFromTarget();
+                    currentSeconds = savedStartSeconds;
+                    updateDisplay();
+                    hasAlerted = false;
+                    timerDigits.classList.remove('alert-flash');
+                } else {
+                    modeCountDown.classList.add('active');
+                    modeCountUp.classList.remove('active');
+                    // 倒计时模式：同步当前目标并重置
+                    const target = getTargetFromInput();
+                    savedTargetSeconds = target;
+                    syncInputsFromTarget();
+                    currentSeconds = savedTargetSeconds;
+                    updateDisplay();
+                    hasAlerted = false;
+                    timerDigits.classList.remove('alert-flash');
+                }
+            }
+
+// 设置区数值变化处理
+            function onSetterChange() {
+                const newTarget = getTargetFromInput();
+
+                if (currentMode === 'countup') {
+                    // 正计时模式：更新开始时间
+                    savedStartSeconds = newTarget;
+                    syncInputsFromTarget();
+                    if (!isRunning) {
+                        // 未运行时立即同步当前时间
+                        currentSeconds = savedStartSeconds;
+                        updateDisplay();
+                        hasAlerted = false;
+                        timerDigits.classList.remove('alert-flash');
+                    }
+                } else {
+                    // 倒计时模式：更新目标时间
+                    savedTargetSeconds = newTarget;
+                    syncInputsFromTarget();
+                    if (!isRunning) {
+                        // 未运行时立即同步当前剩余时间
+                        currentSeconds = savedTargetSeconds;
+                        updateDisplay();
+                        hasAlerted = false;
+                        timerDigits.classList.remove('alert-flash');
+                    }
+                    // 运行时只修改保存的目标值，不影响当前倒计时进度（重置时生效）
+                }
+            }
+
+
+            // 关闭按钮功能，关闭窗口
+            function closeWindow() {
+                if (window.electron) {
+                    // Electron 环境 - 使用安全的 API
+                    window.electron.closeWindow();
+                } else {
+                    // 浏览器环境
+                    window.close();
+                }
+            }
+
+
+            // ---------- 事件绑定 ----------
+
+            //关闭按钮
+            closeBtn.addEventListener('click', closeWindow);
+            startBtn.addEventListener('click', startTimer);
+            pauseBtn.addEventListener('click', pauseTimer);
+            resetBtn.addEventListener('click', resetTimer);
+
+            modeCountUp.addEventListener('click', () => setMode('countup'));
+            modeCountDown.addEventListener('click', () => setMode('countdown'));
+
+            hourInput.addEventListener('change', onSetterChange);
+            minInput.addEventListener('change', onSetterChange);
+            secInput.addEventListener('change', onSetterChange);
+
+            // 初始化
+            function init() {
+                // 根据输入框初始值设定倒计时保存目标和正计时开始时间
+                let initTarget = getTargetFromInput();
+                savedTargetSeconds = initTarget > 0 ? initTarget : 5;
+                savedStartSeconds = initTarget;
+                syncInputsFromTarget();
+                // 默认正计时模式
+                setMode('countup');
+            }
+
+            init();
+        })();
+    </script>
+</body>
+</html>

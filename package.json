@@ -1,0 +1,30 @@
+{
+  "name": "floating-timer",
+  "version": "1.0.0",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.6.4"
+  },
+  "build": {
+    "appId": "com.cyy.floatingtimer",
+    "productName": "FloatingTimer",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "timer.png"
+    },
+    "mac": {
+      "icon": "timer.icns"
+    },
+    "linux": {
+      "icon": "timer.icon"
+    }
+  }
+}
