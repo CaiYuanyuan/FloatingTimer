@@ -1,14 +1,16 @@
 {
   "name": "floating-timer",
   "version": "1.0.0",
+  "description": "一个简洁的悬浮桌面计时器，支持正计时和倒计时",
   "main": "main.js",
+  "author": "caiyuanyuan",
   "scripts": {
     "start": "electron .",
     "build": "electron-builder"
   },
   "devDependencies": {
     "electron": "^28.0.0",
-    "electron-builder": "^24.6.4"
+    "electron-builder": "^23.6.0"
   },
   "build": {
     "appId": "com.cyy.floatingtimer",
@@ -17,8 +19,17 @@
       "output": "dist"
     },
     "win": {
-      "target": "nsis",
-      "icon": "timer.png"
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "timer.png",
+      "publisherName": "caiyuanyuan"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable.${ext}"
     },
     "mac": {
       "icon": "timer.icns"
